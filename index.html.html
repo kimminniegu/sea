@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="ko" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ABYSS: 심해 11,000m 인터랙티브 탐사선</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,400&family=Noto+Sans+KR:wght@300;400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans KR"', 'sans-serif'],
+            mono: ['"Share Tech Mono"', 'monospace'],
+            display: ['"Chakra Petch"', 'sans-serif'],
+          },
+          colors: {
+            abyss: {
+              sunlight: '#0ea5e9',
+              twilight: '#0369a1',
+              midnight: '#0c2240',
+              abyssal: '#050b14',
+              hadal: '#010408',
+              biolum: '#22d3ee',
+              warning: '#f59e0b',
+              danger: '#ef4444'
+            }
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'radar-sweep': 'radarSweep 4s linear infinite',
+          },
+          keyframes: {
+            radarSweep: {
+              '0%': { transform: 'rotate(0deg)' },
+              '100%': { transform: 'rotate(360deg)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #020617;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #0284c7;
+    }
+
+    /* Scanlines effect for submarine HUD */
+    .scanlines {
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.25) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.03),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.03)
+      );
+      background-size: 100% 4px, 6px 100%;
+      pointer-events: none;
+    }
+
+    .glow-cyan {
+      box-shadow: 0 0 20px rgba(34, 211, 238, 0.25), inset 0 0 15px rgba(34, 211, 238, 0.15);
+    }
+    .text-glow-cyan {
+      text-shadow: 0 0 10px rgba(34, 211, 238, 0.7);
+    }
+    .text-glow-amber {
+      text-shadow: 0 0 10px rgba(245, 158, 11, 0.7);
+    }
+    
+    /* Range input styling */
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 20px;
+      width: 20px;
+      border-radius: 50%;
+      background: #22d3ee;
+      cursor: pointer;
+      box-shadow: 0 0 10px #22d3ee;
+      border: 2px solid #083344;
+    }
+  </style>
+</head>
+<body class="bg-[#010408] text-slate-100 font-sans h-full w-full overflow-hidden select-none">
+
+  <!-- Background Exploration Canvas -->
+  <canvas id="depthCanvas" class="fixed inset-0 w-full h-full z-0 pointer-events-auto cursor-crosshair"></canvas>
+
+  <!-- CRT Scanline & Vignette Effect -->
+  <div class="fixed inset-0 scanlines z-10 pointer-events-none"></div>
+  <div class="fixed inset-0 pointer-events-none z-10 shadow-[inset_0_0_120px_rgba(0,0,0,0.85)]"></div>
+
+  <!-- Top Navigation / HUD Bar -->
+  <header class="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3 bg-slate-950/80 backdrop-blur-md border-b border-cyan-900/40">
+    <div class="flex items-center space-x-3">
+      <div class="relative flex items-center justify-center w-8 h-8 rounded-full bg-cyan-950/80 border border-cyan-500/60 glow-cyan">
+        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping absolute"></span>
+        <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="font-display font-bold text-lg tracking-wider text-cyan-300">TRITON-XI</h1>
+          <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-cyan-950/70 border border-cyan-500/30 text-cyan-400">DEEP DIVE HUD</span>
+        </div>
+        <p class="text-[11px] text-slate-400 font-mono">초심해 탐사선 원격 텔레메트리 시스템</p>
+      </div>
+    </div>
+
+    <!-- Live Telemetry Readouts in Header -->
+    <div class="hidden md:flex items-center space-x-8 font-mono text-xs">
+      <div class="text-right">
+        <span class="text-slate-400 text-[10px] block">CURRENT ZONE</span>
+        <span id="hdrZoneName" class="text-cyan-300 font-semibold text-sm">표해수층 (햇빛층)</span>
+      </div>
+      <div class="text-right">
+        <span class="text-slate-400 text-[10px] block">WATER PRESSURE</span>
+        <span id="hdrPressure" class="text-amber-400 font-semibold text-sm">1.0 atm</span>
+      </div>
+      <div class="text-right">
+        <span class="text-slate-400 text-[10px] block">WATER TEMP</span>
+        <span id="hdrTemp" class="text-blue-300 font-semibold text-sm">22.5 °C</span>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="flex items-center space-x-2">
+      <!-- Audio/Sonar Toggle -->
+      <button id="btnAudioToggle" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-cyan-800/60 text-cyan-400 text-xs font-mono transition-all" title="심해 앰비언스 및 소나 음향 토글">
+        <svg id="audioIconOff" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+        </svg>
+        <svg id="audioIconOn" class="w-4 h-4 hidden text-cyan-300 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+        </svg>
+        <span id="audioStatusText">SONAR OFF</span>
+      </button>
+
+      <!-- Headlight Toggle -->
+      <button id="btnHeadlight" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/70 border border-cyan-500/40 text-cyan-300 text-xs font-mono transition-all">
+        <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        <span>탐조등 ON</span>
+      </button>
+
+      <!-- Logbook / Fauna Toggle -->
+      <button id="btnLogbook" class="relative flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono transition-all">
+        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+        </svg>
+        <span>심해도감</span>
+        <span id="badgeDiscovered" class="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded-full text-[10px] font-bold">0/10</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Left Side: Interactive Depth Slider & Scale -->
+  <aside class="fixed left-4 top-20 bottom-20 z-20 w-16 md:w-20 flex flex-col items-center justify-between py-4 px-2 rounded-2xl bg-slate-950/80 backdrop-blur-md border border-cyan-900/40 shadow-2xl">
+    <div class="text-center">
+      <span class="text-[10px] font-mono text-cyan-400 tracking-wider">DEPTH</span>
+      <div id="gaugeDepthNum" class="font-display font-bold text-xs text-cyan-300">0m</div>
+    </div>
+
+    <!-- Vertical Depth Track -->
+    <div class="relative flex-1 w-full flex items-center justify-center my-3">
+      <!-- Zone indicators on track -->
+      <div class="absolute inset-y-0 w-1.5 bg-gradient-to-b from-sky-400 via-blue-800 to-black rounded-full border border-slate-700/50"></div>
+      
+      <!-- Range input rotated vertically -->
+      <input 
+        type="range" 
+        id="depthSlider" 
+        min="0" 
+        max="11000" 
+        step="10" 
+        value="0"
+        class="h-full w-24 -rotate-90 opacity-0 cursor-pointer absolute z-20"
+      >
+      <!-- Visual cursor -->
+      <div id="depthIndicator" class="absolute w-6 h-2 rounded bg-cyan-400 shadow-[0_0_10px_#22d3ee] pointer-events-none transition-all duration-75 left-1/2 -translate-x-1/2 top-0"></div>
+    </div>
+
+    <!-- Quick Depth Jump Buttons -->
+    <div class="w-full flex flex-col space-y-1.5 text-[9px] font-mono text-center">
+      <button class="btn-preset py-1 rounded bg-slate-900/90 hover:bg-cyan-900/40 border border-slate-700 text-slate-300" data-depth="0">0m</button>
+      <button class="btn-preset py-1 rounded bg-slate-900/90 hover:bg-cyan-900/40 border border-slate-700 text-slate-300" data-depth="1000">1000m</button>
+      <button class="btn-preset py-1 rounded bg-slate-900/90 hover:bg-cyan-900/40 border border-slate-700 text-slate-300" data-depth="4000">4000m</button>
+      <button class="btn-preset py-1 rounded bg-slate-900/90 hover:bg-cyan-900/40 border border-slate-700 text-slate-300" data-depth="11000">11000m</button>
+    </div>
+  </aside>
+
+  <!-- Center Main Experience Area -->
+  <main class="relative h-full w-full flex items-center justify-center pointer-events-none z-20">
+    
+    <!-- Reticle & Searchlight Info -->
+    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+      <div class="w-64 h-64 md:w-96 md:h-96 rounded-full border border-cyan-500/10 flex items-center justify-center">
+        <div class="w-32 h-32 rounded-full border border-dashed border-cyan-400/20 flex items-center justify-center">
+          <div class="w-2 h-2 rounded-full bg-cyan-400/30"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Mission Notification / Prompt -->
+    <div id="hintCard" class="absolute bottom-28 md:bottom-24 px-5 py-3 rounded-xl bg-slate-950/80 backdrop-blur-md border border-cyan-500/30 text-center max-w-lg mx-4 pointer-events-auto transition-all duration-300">
+      <div class="flex items-center justify-center space-x-2 text-cyan-300 text-xs font-mono mb-1">
+        <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+        <span>탐사선 안내</span>
+      </div>
+      <p id="hintText" class="text-sm text-slate-200">
+        마우스를 움직여 탐조등을 비추고, 좌측 슬라이더나 마우스 휠로 수심을 조절하세요. 미지의 심해 생물을 클릭하면 데이터가 기록됩니다.
+      </p>
+    </div>
+
+    <!-- Interactive Discovered Creature Alert Modal / Toast -->
+    <div id="creatureToast" class="fixed top-24 right-6 z-40 max-w-sm w-full bg-slate-900/95 backdrop-blur-md border border-cyan-500/50 rounded-2xl p-4 shadow-2xl translate-x-96 opacity-0 transition-all duration-500 pointer-events-auto">
+      <div class="flex items-start space-x-3">
+        <div id="toastIcon" class="w-12 h-12 rounded-xl bg-cyan-950 flex items-center justify-center text-2xl border border-cyan-500/40 shrink-0">
+          🐟
+        </div>
+        <div class="flex-1 min-w-0">
+          <span class="text-[10px] font-mono text-cyan-400 uppercase tracking-widest">NEW SPECIMEN RECORDED</span>
+          <h4 id="toastName" class="text-base font-bold text-white truncate">생물 이름</h4>
+          <p id="toastZone" class="text-xs text-slate-400 font-mono mb-1.5">서식 수심: 200m ~ 1000m</p>
+          <p id="toastDesc" class="text-xs text-slate-300 line-clamp-2">생물 설명...</p>
+        </div>
+        <button id="btnCloseToast" class="text-slate-400 hover:text-white p-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bottom Status Dashboard -->
+  <footer class="fixed bottom-0 left-0 right-0 z-30 bg-slate-950/90 backdrop-blur-md border-t border-cyan-900/40 px-4 py-2 flex flex-wrap items-center justify-between gap-2">
+    <!-- Submarine Controls: Auto Dive / Ascend -->
+    <div class="flex items-center space-x-2">
+      <button id="btnDiveDown" class="px-3 py-1 rounded-md bg-slate-900 hover:bg-cyan-950 border border-cyan-700/40 text-cyan-300 font-mono text-xs flex items-center space-x-1">
+        <span>▼ 자동 잠항</span>
+      </button>
+      <button id="btnAscend" class="px-3 py-1 rounded-md bg-slate-900 hover:bg-cyan-950 border border-cyan-700/40 text-cyan-300 font-mono text-xs flex items-center space-x-1">
+        <span>▲ 자동 부상</span>
+      </button>
+      <button id="btnStop" class="px-3 py-1 rounded-md bg-slate-900 hover:bg-red-950 border border-red-700/40 text-red-300 font-mono text-xs">
+        정지
+      </button>
+    </div>
+
+    <!-- Center Depth Info Bar -->
+    <div class="flex items-center space-x-6 text-xs font-mono">
+      <div class="hidden sm:block">
+        <span class="text-slate-500">ZONE:</span>
+        <span id="ftrZone" class="text-cyan-400 font-bold ml-1">EPIPELAGIC</span>
+      </div>
+      <div>
+        <span class="text-slate-500">DEPTH:</span>
+        <span id="ftrDepth" class="text-white text-sm font-bold ml-1">0 m</span>
+      </div>
+      <div class="hidden md:block">
+        <span class="text-slate-500">PRESSURE:</span>
+        <span id="ftrPressure" class="text-amber-400 ml-1">1.0 ATM</span>
+      </div>
+      <div class="hidden lg:block">
+        <span class="text-slate-500">SUNLIGHT:</span>
+        <span id="ftrLight" class="text-sky-300 ml-1">100%</span>
+      </div>
+    </div>
+
+    <!-- Acoustic Sound Laboratory Button -->
+    <div class="flex items-center space-x-2">
+      <button id="btnAcousticLab" class="px-3 py-1 rounded-md bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-400/50 text-cyan-200 font-mono text-xs flex items-center space-x-1.5 shadow-[0_0_10px_rgba(34,211,238,0.2)]">
+        <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
+        <span>심해 미스터리 음향 청음</span>
+      </button>
+    </div>
+  </footer>
+
+  <div id="modalLogbook" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-slate-950 border border-cyan-500/40 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="p-2 rounded-xl bg-cyan-950 border border-cyan-500/40 text-cyan-300">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-white">해양 심층 생물 도감 (Deep Sea Specimen Log)</h3>
+            <p class="text-xs text-slate-400 font-mono">수심별 마주친 경이로운 심해 생물들의 발견 현황입니다.</p>
+          </div>
+        </div>
+        <button id="btnCloseLogbook" class="text-slate-400 hover:text-white p-2 rounded-lg bg-slate-900 border border-slate-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Modal Body: Creature Grid -->
+      <div class="p-6 overflow-y-auto flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="logbookGrid">
+        <!-- Injected dynamically by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <div id="modalAcoustic" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="bg-slate-950 border border-cyan-500/50 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-cyan-900/40 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-9 h-9 rounded-xl bg-cyan-950 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z" /></svg>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-white">미스터리 해저 음향 연구소 (Hydrophone Lab)</h3>
+            <p class="text-xs text-cyan-400 font-mono">NOAA(미국해양대기청)에서 관측했던 정체불명의 심해 극저주파 음향</p>
+          </div>
+        </div>
+        <button id="btnCloseAcoustic" class="text-slate-400 hover:text-white p-2 rounded-lg bg-slate-900 border border-slate-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Acoustic Player List -->
+      <div class="p-6 space-y-4 overflow-y-auto">
+        <!-- Bloop Card -->
+        <div class="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-cyan-500/50 transition-all flex items-center justify-between">
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2">
+              <span class="font-bold text-cyan-300">더 블룹 (The Bloop, 1997)</span>
+              <span class="px-2 py-0.5 text-[10px] rounded bg-cyan-950 text-cyan-400 font-mono">남태평양 50° S 100° W</span>
+            </div>
+            <p class="text-xs text-slate-300">5,000km 떨어진 수중 청음기에서도 감지된 압도적 음향. 초대형 빙산 붕괴음으로 추정되나 오랫동안 전설 속 괴생명체로 여겨짐.</p>
+          </div>
+          <button class="btn-play-sound px-4 py-2 rounded-xl bg-cyan-900 hover:bg-cyan-800 text-cyan-200 font-mono text-xs flex items-center space-x-2 shrink-0 ml-4" data-sound="bloop">
+            <span>▶ 재생</span>
+          </button>
+        </div>
+
+        <!-- Julia Card -->
+        <div class="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-cyan-500/50 transition-all flex items-center justify-between">
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2">
+              <span class="font-bold text-cyan-300">줄리아 (Julia, 1999)</span>
+              <span class="px-2 py-0.5 text-[10px] rounded bg-cyan-950 text-cyan-400 font-mono">적도 태평양</span>
+            </div>
+            <p class="text-xs text-slate-300">마치 누군가 속삭이거나 흐느끼는 듯한 기괴하고 지속적인 저주파 음향. 남극 빙산이 바저층에 긁히는 소리로 분석됨.</p>
+          </div>
+          <button class="btn-play-sound px-4 py-2 rounded-xl bg-cyan-900 hover:bg-cyan-800 text-cyan-200 font-mono text-xs flex items-center space-x-2 shrink-0 ml-4" data-sound="julia">
+            <span>▶ 재생</span>
+          </button>
+        </div>
+
+        <!-- Slow Down Card -->
+        <div class="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-cyan-500/50 transition-all flex items-center justify-between">
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2">
+              <span class="font-bold text-cyan-300">슬로우 다운 (Slow Down, 1997)</span>
+              <span class="px-2 py-0.5 text-[10px] rounded bg-cyan-950 text-cyan-400 font-mono">남태평양</span>
+            </div>
+            <p class="text-xs text-slate-300">주파수가 약 7분에 걸쳐 서서히 하강하는 특징을 가진 미스터리 사운드. 거대한 빙상이 해저면을 미끄러질 때 발생하는 진동음.</p>
+          </div>
+          <button class="btn-play-sound px-4 py-2 rounded-xl bg-cyan-900 hover:bg-cyan-800 text-cyan-200 font-mono text-xs flex items-center space-x-2 shrink-0 ml-4" data-sound="slowdown">
+            <span>▶ 재생</span>
+          </button>
+        </div>
+
+        <!-- Acoustic Visualizer canvas -->
+        <div class="mt-4 p-4 rounded-2xl bg-black border border-cyan-900/60 flex flex-col items-center">
+          <span class="text-[10px] font-mono text-cyan-400 mb-2">실시간 오디오 주파수 스펙트럼</span>
+          <canvas id="audioVisualizer" class="w-full h-16 bg-slate-950 rounded-lg"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* --- 심해 구역 및 생태계 데이터 정의 --- */
+    const OCEAN_ZONES = [
+      {
+        id: 'epipelagic',
+        name: '표해수층 (햇빛층)',
+        enName: 'Epipelagic Zone',
+        minDepth: 0,
+        maxDepth: 200,
+        colorBg: [14, 165, 233], // sky-500
+        desc: '태양빛이 충분히 도달하여 광합성이 일어나는 해양 생태계의 요람입니다.',
+        temp: [26, 20],
+        pressure: [1, 21],
+      },
+      {
+        id: 'mesopelagic',
+        name: '중심해수층 (황혼층)',
+        enName: 'Mesopelagic Zone',
+        minDepth: 200,
+        maxDepth: 1000,
+        colorBg: [3, 105, 161], // sky-700
+        desc: '빛이 희미하게 남아있는 구역입니다. 이곳의 생물들은 거대한 눈과 미약한 발광기관을 진화시켰습니다.',
+        temp: [20, 5],
+        pressure: [21, 101],
+      },
+      {
+        id: 'bathypelagic',
+        name: '점심해수층 (자정층)',
+        enName: 'Bathypelagic Zone',
+        minDepth: 1000,
+        maxDepth: 4000,
+        colorBg: [12, 34, 64],
+        desc: '태양광이 완전히 소멸된 암흑의 세계입니다. 오직 생물 발광(Bioluminescence)만이 어둠을 밝힙니다.',
+        temp: [5, 3],
+        pressure: [101, 401],
+      },
+      {
+        id: 'abyssopelagic',
+        name: '심해저대 (심연층)',
+        enName: 'Abyssopelagic Zone',
+        minDepth: 4000,
+        maxDepth: 6000,
+        colorBg: [5, 11, 20],
+        desc: '영하에 가까운 혹한과 엄청난 수압, 먹이가 희소한 구역으로 기괴한 형태의 특수 생물들이 서식합니다.',
+        temp: [3, 1],
+        pressure: [401, 601],
+      },
+      {
+        id: 'hadopelagic',
+        name: '초심해저대 (해구층)',
+        enName: 'Hadopelagic Zone',
+        minDepth: 6000,
+        maxDepth: 11000,
+        colorBg: [1, 4, 8],
+        desc: '마리아나 해구 등 지구상 가장 깊은 협곡. 수천 개의 대기압에 달하는 파괴적 수압 속에서도 신비로운 생명이 번성합니다.',
+        temp: [1, 1.5],
+        pressure: [601, 1100],
+      }
+    ];
+
+    /* --- 심해 생물 데이터베이스 --- */
+    const CREATURES_DATA = [
+      {
+        id: 'tuna',
+        name: '참다랑어',
+        scientific: 'Thunnus thynnus',
+        zone: '표해수층 (0m - 200m)',
+        depthRange: [0, 200],
+        depth: 60,
+        icon: '🐟',
+        color: '#38bdf8',
+        discovered: false,
+        size: '2.5m',
+        desc: '시속 70km 이상으로 질주하는 유선형 몸매의 표층 최상위 포식자입니다.'
+      },
+      {
+        id: 'jellyfish_sun',
+        name: '보름달물해파리',
+        scientific: 'Aurelia aurita',
+        zone: '표해수층 (0m - 200m)',
+        depthRange: [10, 180],
+        depth: 120,
+        icon: '🪼',
+        color: '#67e8f9',
+        discovered: false,
+        size: '30cm',
+        desc: '반투명한 우산 형태를 수축하며 조류를 타고 유영하는 대표적인 플랑크톤성 동물입니다.'
+      },
+      {
+        id: 'barreleye',
+        name: '배럴아이 (통안어)',
+        scientific: 'Macropinna microstoma',
+        zone: '중심해수층 (200m - 1000m)',
+        depthRange: [400, 800],
+        depth: 550,
+        icon: '👁️',
+        color: '#34d399',
+        discovered: false,
+        size: '15cm',
+        desc: '투명한 머리 돔 속에 초록색 원통형 눈을 가지고 있어 위쪽의 미세한 그림자나 해파리의 발광을 포착합니다.'
+      },
+      {
+        id: 'hatchetfish',
+        name: '도끼고기 (해칫피쉬)',
+        scientific: 'Argyropelecus gigas',
+        zone: '중심해수층 (200m - 1000m)',
+        depthRange: [300, 950],
+        depth: 780,
+        icon: '🐠',
+        color: '#a7f3d0',
+        discovered: false,
+        size: '12cm',
+        desc: '몸 밑면에 발광 기관을 통해 아래에서 쳐다보는 포식자에게 자신의 그림자를 지우는 역발광 위장을 합니다.'
+      },
+      {
+        id: 'giant_squid',
+        name: '대왕오징어',
+        scientific: 'Architeuthis dux',
+        zone: '점심해수층 (1000m - 4000m)',
+        depthRange: [800, 1500],
+        depth: 1200,
+        icon: '🦑',
+        color: '#f87171',
+        discovered: false,
+        size: '13m',
+        desc: '농구공 크기(지름 30cm)의 지구상 동물 중 가장 큰 눈을 지닌 전설의 심해 연체동물입니다.'
+      },
+      {
+        id: 'anglerfish',
+        name: '초롱아귀 (심해 앵글러피쉬)',
+        scientific: 'Melanocetus johnsonii',
+        zone: '점심해수층 (1000m - 4000m)',
+        depthRange: [1200, 3000],
+        depth: 2100,
+        icon: '🐡',
+        color: '#fbbf24',
+        discovered: false,
+        size: '20cm',
+        desc: '머리 앞의 미끼 돌기(에스카)에 공생 발광 박테리아를 서식시켜 먹이를 유인하여 집어삼킵니다.'
+      },
+      {
+        id: 'gulper_eel',
+        name: '풍선장어 (펠리컨 장어)',
+        scientific: 'Eurypharynx pelecanoides',
+        zone: '점심해수층 (1000m - 4000m)',
+        depthRange: [1500, 3500],
+        depth: 2800,
+        icon: '🐍',
+        color: '#c084fc',
+        discovered: false,
+        size: '1m',
+        desc: '자신의 몸체보다 훨씬 거대한 입을 주머니처럼 벌려 마주치는 모든 유기물을 쓸어 담습니다.'
+      },
+      {
+        id: 'dumbo_octopus',
+        name: '덤보 문어 (우무문어)',
+        scientific: 'Grimpoteuthis',
+        zone: '심해저대 (4000m - 6000m)',
+        depthRange: [3800, 5000],
+        depth: 4400,
+        icon: '🐙',
+        color: '#f472b6',
+        discovered: false,
+        size: '30cm',
+        desc: '코끼리 귀처럼 생긴 지느러미를 펄럭이며 심해 바닥 위를 우아하게 부유하는 매혹적인 연체동물입니다.'
+      },
+      {
+        id: 'giant_isopod',
+        name: '대왕등각류 (자이언트 이소포드)',
+        scientific: 'Bathynomus giganteus',
+        zone: '심해저대 (4000m - 6000m)',
+        depthRange: [4200, 5800],
+        depth: 5200,
+        icon: '🦞',
+        color: '#fb923c',
+        discovered: false,
+        size: '45cm',
+        desc: '심해 거대증(Deep-sea gigantism)의 대표종으로, 해저 바닥에 떨어지는 해양 사체(마린 스노우, 고래 사체)를 먹는 청소부입니다.'
+      },
+      {
+        id: 'snailfish',
+        name: '마리아나 꼼치 (스네일피쉬)',
+        scientific: 'Pseudoliparis swirei',
+        zone: '초심해저대 (6000m - 11000m)',
+        depthRange: [6500, 8200],
+        depth: 7900,
+        icon: '🐋',
+        color: '#e2e8f0',
+        discovered: false,
+        size: '25cm',
+        desc: '에베레스트 산을 뒤집어놓은 깊이의 1000기압 압력 속에서도 TMAO 단백질 안정화 물질로 형태를 유지하는 극한 생명체입니다.'
+      }
+    ];
+
+    // Global state
+    const state = {
+      depth: 0,
+      targetDepth: 0,
+      autoDiveSpeed: 0, // >0: dive, <0: ascend, 0: stop
+      mouse: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
+      searchlight: true,
+      audioEnabled: false,
+      audioCtx: null,
+      sonarOsc: null,
+      sonarGain: null,
+      ambientGain: null,
+      discoveredCount: 0
+    };
+
+    const canvas = document.getElementById('depthCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let canvasWidth = window.innerWidth;
+    let canvasHeight = window.innerHeight;
+
+    function resizeCanvas() {
+      canvasWidth = window.innerWidth;
+      canvasHeight = window.innerHeight;
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Particle system: Marine snow & bioluminescent floaters
+    const NUM_PARTICLES = 120;
+    const particles = [];
+
+    for (let i = 0; i < NUM_PARTICLES; i++) {
+      particles.push({
+        x: Math.random() * canvasWidth,
+        y: Math.random() * canvasHeight,
+        radius: Math.random() * 2.2 + 0.6,
+        speedX: (Math.random() - 0.5) * 0.4,
+        speedY: Math.random() * 0.7 + 0.3,
+        alpha: Math.random() * 0.7 + 0.2,
+        isBiolum: Math.random() > 0.75,
+        color: Math.random() > 0.5 ? '#22d3ee' : '#34d399'
+      });
+    }
+
+    // Interactive Floating Creatures in canvas world
+    const activeCreatures = CREATURES_DATA.map(c => ({
+      ...c,
+      x: Math.random() * (canvasWidth - 200) + 100,
+      y: canvasHeight / 2 + (Math.random() - 0.5) * 200,
+      vx: (Math.random() > 0.5 ? 1 : -1) * (0.3 + Math.random() * 0.5),
+      vy: (Math.random() - 0.5) * 0.2,
+      scale: 1,
+      hovered: false
+    }));
+
+    function initAudio() {
+      if (state.audioCtx) return;
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        state.audioCtx = new AudioContext();
+
+        // 1. Ambient low-frequency submarine rumble generator
+        const bufferSize = state.audioCtx.sampleRate * 2;
+        const noiseBuffer = state.audioCtx.createBuffer(1, bufferSize, state.audioCtx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          output[i] = Math.random() * 2 - 1;
+        }
+
+        const whiteNoise = state.audioCtx.createBufferSource();
+        whiteNoise.buffer = noiseBuffer;
+        whiteNoise.loop = true;
+
+        const biquad = state.audioCtx.createBiquadFilter();
+        biquad.type = 'lowpass';
+        biquad.frequency.value = 120;
+
+        state.ambientGain = state.audioCtx.createGain();
+        state.ambientGain.gain.value = 0.2;
+
+        whiteNoise.connect(biquad);
+        biquad.connect(state.ambientGain);
+        state.ambientGain.connect(state.audioCtx.destination);
+        whiteNoise.start(0);
+
+        // Periodic Sonar Ping
+        setInterval(() => {
+          if (state.audioEnabled && state.audioCtx && state.audioCtx.state === 'running') {
+            triggerSonarPing();
+          }
+        }, 4500);
+
+      } catch (err) {
+        console.warn("Audio Context Init error:", err);
+      }
+    }
+
+    function triggerSonarPing() {
+      if (!state.audioCtx) return;
+      const osc = state.audioCtx.createOscillator();
+      const gain = state.audioCtx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1400, state.audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1100, state.audioCtx.currentTime + 0.4);
+
+      gain.gain.setValueAtTime(0.2, state.audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, state.audioCtx.currentTime + 1.8);
+
+      osc.connect(gain);
+      gain.connect(state.audioCtx.destination);
+
+      osc.start();
+      osc.stop(state.audioCtx.currentTime + 1.9);
+    }
+
+    // Mystery Sound synthesizers (Bloop, Julia, Slow Down)
+    function playSyntheticMystery(soundType) {
+      initAudio();
+      if (state.audioCtx.state === 'suspended') {
+        state.audioCtx.resume();
+      }
+
+      const now = state.audioCtx.currentTime;
+      const osc = state.audioCtx.createOscillator();
+      const gain = state.audioCtx.createGain();
+
+      if (soundType === 'bloop') {
+        // Bloop: rises from very low to mid, then sweeps
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(45, now);
+        osc.frequency.exponentialRampToValueAtTime(320, now + 1.2);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 3.0);
+
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.35, now + 0.8);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 3.2);
+
+        osc.connect(gain);
+        gain.connect(state.audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 3.3);
+      } else if (soundType === 'julia') {
+        // Julia: eerie fluctuating low-frequency whine
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(110, now);
+        osc.frequency.linearRampToValueAtTime(95, now + 1.5);
+        osc.frequency.linearRampToValueAtTime(105, now + 3.5);
+
+        const filter = state.audioCtx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 220;
+        filter.Q.value = 8;
+
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.25, now + 1.0);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 4.0);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(state.audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 4.1);
+      } else if (soundType === 'slowdown') {
+        // Slow Down: slowly dropping pitch
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(280, now);
+        osc.frequency.exponentialRampToValueAtTime(35, now + 4.5);
+
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 4.8);
+
+        osc.connect(gain);
+        gain.connect(state.audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 4.9);
+      }
+
+      animateVisualizer();
+    }
+
+    let visAnimationId = null;
+    function animateVisualizer() {
+      const vCanvas = document.getElementById('audioVisualizer');
+      if (!vCanvas) return;
+      const vCtx = vCanvas.getContext('2d');
+      vCanvas.width = vCanvas.clientWidth;
+      vCanvas.height = 64;
+
+      let frame = 0;
+      function drawWave() {
+        frame++;
+        vCtx.fillStyle = '#020617';
+        vCtx.fillRect(0, 0, vCanvas.width, vCanvas.height);
+
+        vCtx.lineWidth = 2;
+        vCtx.strokeStyle = '#22d3ee';
+        vCtx.beginPath();
+
+        const sliceWidth = vCanvas.width / 40;
+        let x = 0;
+        for (let i = 0; i < 40; i++) {
+          const amp = Math.sin(frame * 0.15 + i * 0.3) * (Math.max(0, 30 - frame * 0.25));
+          const y = vCanvas.height / 2 + amp;
+          if (i === 0) vCtx.moveTo(x, y);
+          else vCtx.lineTo(x, y);
+          x += sliceWidth;
+        }
+        vCtx.stroke();
+
+        if (frame < 120) {
+          visAnimationId = requestAnimationFrame(drawWave);
+        }
+      }
+      cancelAnimationFrame(visAnimationId);
+      drawWave();
+    }
+
+    function getCurrentZone(d) {
+      return OCEAN_ZONES.find(z => d >= z.minDepth && d <= z.maxDepth) || OCEAN_ZONES[OCEAN_ZONES.length - 1];
+    }
+
+    function calculateEnvironmentalData(d) {
+      const zone = getCurrentZone(d);
+      const zoneRatio = Math.max(0, Math.min(1, (d - zone.minDepth) / (zone.maxDepth - zone.minDepth)));
+      
+      // Water pressure: ~1 atm per 10 meters + 1 atm at surface
+      const pressure = (1 + (d / 10)).toFixed(1);
+      
+      // Water temperature: linearly interpolate in current zone
+      const temp = (zone.temp[0] + (zone.temp[1] - zone.temp[0]) * zoneRatio).toFixed(1);
+      
+      // Sunlight percentage: 100% at 0m down to 0% at 1000m
+      const sunlight = d <= 1000 ? Math.max(0, Math.round((1 - (d / 1000)) * 100)) : 0;
+
+      return { zone, pressure, temp, sunlight };
+    }
+
+    function updateHUD() {
+      const data = calculateEnvironmentalData(state.depth);
+      
+      document.getElementById('hdrZoneName').textContent = data.zone.name;
+      document.getElementById('hdrPressure').textContent = `${data.pressure} atm`;
+      document.getElementById('hdrTemp').textContent = `${data.temp} °C`;
+
+      document.getElementById('gaugeDepthNum').textContent = `${Math.round(state.depth)}m`;
+      document.getElementById('ftrDepth').textContent = `${Math.round(state.depth)} m`;
+      document.getElementById('ftrZone').textContent = data.zone.enName.toUpperCase();
+      document.getElementById('ftrPressure').textContent = `${data.pressure} ATM`;
+      document.getElementById('ftrLight').textContent = `${data.sunlight}%`;
+
+      // Slider and indicator position
+      const slider = document.getElementById('depthSlider');
+      slider.value = state.depth;
+
+      const indicator = document.getElementById('depthIndicator');
+      const trackPercent = (state.depth / 11000) * 100;
+      indicator.style.top = `${trackPercent}%`;
+    }
+
+    function render() {
+      // Depth interpolation for smooth diving
+      if (state.autoDiveSpeed !== 0) {
+        state.depth = Math.max(0, Math.min(11000, state.depth + state.autoDiveSpeed));
+      } else if (Math.abs(state.targetDepth - state.depth) > 0.5) {
+        state.depth += (state.targetDepth - state.depth) * 0.1;
+      }
+
+      updateHUD();
+
+      // Clear & Background Color based on Depth
+      const currentZone = getCurrentZone(state.depth);
+      const zoneProgress = (state.depth - currentZone.minDepth) / (currentZone.maxDepth - currentZone.minDepth);
+      
+      // Interpolate depth color
+      const [r, g, b] = currentZone.colorBg;
+      const dimFactor = Math.max(0.1, 1 - (state.depth / 8000));
+      
+      ctx.fillStyle = `rgb(${Math.round(r * dimFactor)}, ${Math.round(g * dimFactor)}, ${Math.round(b * dimFactor)})`;
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+      // Surface sunlight beams (only if depth < 600m)
+      if (state.depth < 600) {
+        const sunIntensity = (1 - (state.depth / 600)) * 0.35;
+        const grad = ctx.createLinearGradient(0, 0, 0, canvasHeight * 0.8);
+        grad.addColorStop(0, `rgba(56, 189, 248, ${sunIntensity})`);
+        grad.addColorStop(0.5, `rgba(14, 116, 144, ${sunIntensity * 0.5})`);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        // Sun light rays
+        ctx.save();
+        ctx.globalAlpha = sunIntensity * 0.5;
+        for (let i = 0; i < 5; i++) {
+          ctx.beginPath();
+          const startX = (canvasWidth / 5) * i + Math.sin(Date.now() * 0.001 + i) * 50;
+          ctx.moveTo(startX, 0);
+          ctx.lineTo(startX + 180, canvasHeight);
+          ctx.lineTo(startX + 90, canvasHeight);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // Searchlight Beam Effect from Mouse / Submarine
+      if (state.searchlight) {
+        ctx.save();
+        const beamRadius = 260;
+        const radialGrad = ctx.createRadialGradient(
+          state.mouse.x, state.mouse.y, 10,
+          state.mouse.x, state.mouse.y, beamRadius
+        );
+        radialGrad.addColorStop(0, 'rgba(224, 242, 254, 0.38)');
+        radialGrad.addColorStop(0.5, 'rgba(56, 189, 248, 0.12)');
+        radialGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+        ctx.fillStyle = radialGrad;
+        ctx.beginPath();
+        ctx.arc(state.mouse.x, state.mouse.y, beamRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Render Marine Snow Particles
+      particles.forEach(p => {
+        // Snow moves slightly downwards + drift with water currents
+        p.y += p.speedY + (state.autoDiveSpeed > 0 ? -1.5 : (state.autoDiveSpeed < 0 ? 1.5 : 0));
+        p.x += p.speedX;
+
+        // Wrap around screen
+        if (p.y > canvasHeight) p.y = 0;
+        if (p.y < 0) p.y = canvasHeight;
+        if (p.x > canvasWidth) p.x = 0;
+        if (p.x < 0) p.x = canvasWidth;
+
+        // Distance from flashlight to increase visibility
+        const distToMouse = Math.hypot(p.x - state.mouse.x, p.y - state.mouse.y);
+        const lightBoost = state.searchlight && distToMouse < 240 ? (1 - distToMouse / 240) * 0.6 : 0;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        if (p.isBiolum && state.depth > 800) {
+          ctx.fillStyle = p.color;
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 8;
+          ctx.globalAlpha = Math.min(1, p.alpha + lightBoost + 0.3);
+        } else {
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = Math.min(0.9, p.alpha * 0.6 + lightBoost);
+        }
+        ctx.fill();
+        ctx.restore();
+      });
+
+      // Render Active Creatures suitable for current depth
+      activeCreatures.forEach(c => {
+        // Creature is visible if depth is within range
+        const depthDelta = Math.abs(state.depth - c.depth);
+        const isVisibleDepth = depthDelta < 400;
+
+        if (isVisibleDepth) {
+          c.x += c.vx;
+          c.y += c.vy + Math.sin(Date.now() * 0.002 + c.depth) * 0.4;
+
+          // Boundary bounce
+          if (c.x < 120 || c.x > canvasWidth - 120) c.vx *= -1;
+          if (c.y < 120 || c.y > canvasHeight - 120) c.vy *= -1;
+
+          // Check if mouse is hovering over creature
+          const distToMouse = Math.hypot(c.x - state.mouse.x, c.y - state.mouse.y);
+          c.hovered = distToMouse < 45;
+
+          ctx.save();
+          ctx.translate(c.x, c.y);
+
+          // Face swimming direction
+          if (c.vx < 0) {
+            ctx.scale(-1, 1);
+          }
+
+          // Bioluminescent Glow halo
+          if (state.depth > 500) {
+            ctx.shadowColor = c.color;
+            ctx.shadowBlur = 18;
+          }
+
+          // Creature icon emoji / symbol
+          ctx.font = c.hovered ? '42px sans-serif' : '34px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(c.icon, 0, 0);
+
+          // Tag text below creature
+          ctx.shadowBlur = 0;
+          ctx.font = '11px "Share Tech Mono", monospace';
+          ctx.fillStyle = c.discovered ? '#34d399' : '#22d3ee';
+          ctx.fillText(`[${c.name}]`, 0, 30);
+
+          if (c.hovered) {
+            ctx.fillStyle = '#f59e0b';
+            ctx.font = '10px "Noto Sans KR", sans-serif';
+            ctx.fillText(c.discovered ? '✓ 도감 등록됨' : '★ 클릭하여 표본 스캔', 0, 44);
+          }
+
+          ctx.restore();
+        }
+      });
+
+      requestAnimationFrame(render);
+    }
+
+    // Mouse & Touch tracking for Searchlight
+    function setPointerPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      state.mouse.x = e.clientX - rect.left;
+      state.mouse.y = e.clientY - rect.top;
+    }
+    window.addEventListener('mousemove', setPointerPos);
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length > 0) {
+        setPointerPos(e.touches[0]);
+      }
+    }, { passive: true });
+
+    // Wheel to dive / ascend
+    window.addEventListener('wheel', (e) => {
+      state.targetDepth = Math.max(0, Math.min(11000, state.depth + e.deltaY * 1.2));
+    }, { passive: true });
+
+    // Slider direct manipulation
+    const depthSlider = document.getElementById('depthSlider');
+    depthSlider.addEventListener('input', (e) => {
+      state.autoDiveSpeed = 0;
+      state.depth = parseFloat(e.target.value);
+      state.targetDepth = state.depth;
+    });
+
+    // Preset Depth Quick Buttons
+    document.querySelectorAll('.btn-preset').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        state.autoDiveSpeed = 0;
+        const target = parseFloat(e.target.getAttribute('data-depth'));
+        state.targetDepth = target;
+      });
+    });
+
+    // Auto Dive / Ascend Controls
+    document.getElementById('btnDiveDown').addEventListener('click', () => {
+      state.autoDiveSpeed = 15;
+    });
+    document.getElementById('btnAscend').addEventListener('click', () => {
+      state.autoDiveSpeed = -15;
+    });
+    document.getElementById('btnStop').addEventListener('click', () => {
+      state.autoDiveSpeed = 0;
+      state.targetDepth = state.depth;
+    });
+
+    // Headlight toggle
+    const btnHeadlight = document.getElementById('btnHeadlight');
+    btnHeadlight.addEventListener('click', () => {
+      state.searchlight = !state.searchlight;
+      btnHeadlight.classList.toggle('bg-cyan-950/60', state.searchlight);
+      btnHeadlight.classList.toggle('bg-slate-900', !state.searchlight);
+      btnHeadlight.querySelector('span').textContent = state.searchlight ? '탐조등 ON' : '탐조등 OFF';
+    });
+
+    // Audio & Sonar toggle
+    const btnAudioToggle = document.getElementById('btnAudioToggle');
+    const audioIconOff = document.getElementById('audioIconOff');
+    const audioIconOn = document.getElementById('audioIconOn');
+    const audioStatusText = document.getElementById('audioStatusText');
+
+    btnAudioToggle.addEventListener('click', () => {
+      initAudio();
+      state.audioEnabled = !state.audioEnabled;
+
+      if (state.audioEnabled) {
+        if (state.audioCtx.state === 'suspended') {
+          state.audioCtx.resume();
+        }
+        if (state.ambientGain) {
+          state.ambientGain.gain.setTargetAtTime(0.25, state.audioCtx.currentTime, 0.1);
+        }
+        triggerSonarPing();
+        audioIconOff.classList.add('hidden');
+        audioIconOn.classList.remove('hidden');
+        audioStatusText.textContent = 'SONAR ON';
+      } else {
+        if (state.ambientGain && state.audioCtx) {
+          state.ambientGain.gain.setTargetAtTime(0, state.audioCtx.currentTime, 0.1);
+        }
+        audioIconOff.classList.remove('hidden');
+        audioIconOn.classList.add('hidden');
+        audioStatusText.textContent = 'SONAR OFF';
+      }
+    });
+
+    canvas.addEventListener('click', () => {
+      // Check if any visible creature was clicked
+      activeCreatures.forEach(c => {
+        const depthDelta = Math.abs(state.depth - c.depth);
+        if (depthDelta < 400 && c.hovered) {
+          discoverCreature(c);
+        }
+      });
+    });
+
+    function discoverCreature(c) {
+      if (!c.discovered) {
+        c.discovered = true;
+        state.discoveredCount++;
+        document.getElementById('badgeDiscovered').textContent = `${state.discoveredCount}/10`;
+        
+        // Play discovery sound if audio active
+        if (state.audioCtx && state.audioEnabled) {
+          const osc = state.audioCtx.createOscillator();
+          const gain = state.audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, state.audioCtx.currentTime); // D5
+          osc.frequency.setValueAtTime(880, state.audioCtx.currentTime + 0.12); // A5
+          gain.gain.setValueAtTime(0.15, state.audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, state.audioCtx.currentTime + 0.5);
+          osc.connect(gain);
+          gain.connect(state.audioCtx.destination);
+          osc.start();
+          osc.stop(state.audioCtx.currentTime + 0.52);
+        }
+      }
+
+      // Show toast
+      const toast = document.getElementById('creatureToast');
+      document.getElementById('toastIcon').textContent = c.icon;
+      document.getElementById('toastName').textContent = `${c.name} (${c.scientific})`;
+      document.getElementById('toastZone').textContent = `${c.zone} | 체장: ${c.size}`;
+      document.getElementById('toastDesc').textContent = c.desc;
+
+      toast.classList.remove('translate-x-96', 'opacity-0');
+      toast.classList.add('translate-x-0', 'opacity-100');
+
+      clearTimeout(window.toastTimer);
+      window.toastTimer = setTimeout(() => {
+        toast.classList.add('translate-x-96', 'opacity-0');
+        toast.classList.remove('translate-x-0', 'opacity-100');
+      }, 5000);
+    }
+
+    document.getElementById('btnCloseToast').addEventListener('click', () => {
+      const toast = document.getElementById('creatureToast');
+      toast.classList.add('translate-x-96', 'opacity-0');
+    });
+
+    const modalLogbook = document.getElementById('modalLogbook');
+    const btnLogbook = document.getElementById('btnLogbook');
+    const btnCloseLogbook = document.getElementById('btnCloseLogbook');
+    const logbookGrid = document.getElementById('logbookGrid');
+
+    function renderLogbook() {
+      logbookGrid.innerHTML = '';
+      activeCreatures.forEach(c => {
+        const card = document.createElement('div');
+        card.className = `p-4 rounded-2xl border transition-all ${
+          c.discovered 
+            ? 'bg-slate-900/90 border-cyan-500/40 shadow-[0_0_15px_rgba(34,211,238,0.1)]' 
+            : 'bg-slate-950/60 border-slate-800 opacity-65'
+        }`;
+
+        card.innerHTML = `
+          <div class="flex items-center space-x-3 mb-2">
+            <div class="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-2xl border border-slate-700">
+              ${c.discovered ? c.icon : '❓'}
+            </div>
+            <div>
+              <h4 class="font-bold text-sm ${c.discovered ? 'text-white' : 'text-slate-400'}">
+                ${c.discovered ? c.name : '미확인 생명체'}
+              </h4>
+              <p class="text-[10px] font-mono text-slate-400">${c.discovered ? c.scientific : '스캔 대기 중'}</p>
+            </div>
+          </div>
+          <div class="text-xs space-y-1 text-slate-300">
+            <div class="flex justify-between font-mono text-[11px] text-cyan-400">
+              <span>서식 수심:</span>
+              <span>약 ${c.depth}m 부근</span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-relaxed">
+              ${c.discovered ? c.desc : '해당 수심으로 이동하여 잠조등을 비춘 후 클릭하여 도감에 등록하세요.'}
+            </p>
+          </div>
+          ${!c.discovered ? `
+            <button class="mt-3 w-full py-1 rounded bg-slate-900 hover:bg-cyan-950 border border-slate-700 text-cyan-300 text-[11px] font-mono" onclick="state.targetDepth = ${c.depth}; modalLogbook.classList.add('hidden');">
+              수심 ${c.depth}m로 잠항
+            </button>
+          ` : ''}
+        `;
+        logbookGrid.appendChild(card);
+      });
+    }
+
+    btnLogbook.addEventListener('click', () => {
+      renderLogbook();
+      modalLogbook.classList.remove('hidden');
+      modalLogbook.classList.add('flex');
+    });
+
+    btnCloseLogbook.addEventListener('click', () => {
+      modalLogbook.classList.add('hidden');
+      modalLogbook.classList.remove('flex');
+    });
+
+    const modalAcoustic = document.getElementById('modalAcoustic');
+    const btnAcousticLab = document.getElementById('btnAcousticLab');
+    const btnCloseAcoustic = document.getElementById('btnCloseAcoustic');
+
+    btnAcousticLab.addEventListener('click', () => {
+      modalAcoustic.classList.remove('hidden');
+      modalAcoustic.classList.add('flex');
+      animateVisualizer();
+    });
+
+    btnCloseAcoustic.addEventListener('click', () => {
+      modalAcoustic.classList.add('hidden');
+      modalAcoustic.classList.remove('flex');
+    });
+
+    document.querySelectorAll('.btn-play-sound').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const sound = e.currentTarget.getAttribute('data-sound');
+        playSyntheticMystery(sound);
+      });
+    });
+
+    window.onload = function () {
+      updateHUD();
+      render();
+    };
+  </script>
+</body>
+</html>
